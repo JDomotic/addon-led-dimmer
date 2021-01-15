@@ -10,6 +10,8 @@
 
 #define LED_OUTPUT_SCALE 10000UL
 
+#define IDENTIFIER 'O'
+
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <stdbool.h>
@@ -47,7 +49,7 @@ uint8_t current_port_values = 0;
 uint8_t port_output_value_index = 0;
 uint8_t current_tick = 0;
 
-uint8_t wanted_led_output_values[12];
+uint8_t wanted_led_output_values[18];
 long led_output_values[9] = {0};
 	
 uint8_t uart_led_channel = 0;
@@ -93,7 +95,7 @@ ISR(TCB0_INT_vect){
 	// Clear interrupt flag
 	TCB0_INTFLAGS = 0b00000001;
 	// Write 'out of sync' package
-	USART_write('O');
+	USART_write(IDENTIFIER);
 }
 
 ///
@@ -103,7 +105,7 @@ ISR(USART0_RXC_vect){
 	wanted_led_output_values[uart_led_channel] =  USART0.RXDATAL;
 	
 	// Update package is done, so reset the UART package channel to 0
-	if(uart_led_channel == 12){
+	if(uart_led_channel == 17){
 		uart_led_channel = 0;
 		
 		recalculate_port_output_values = true;
@@ -186,12 +188,13 @@ void calculate_steps(){
 	}
 	
 	// Sort steps
-	for(uint8_t i = 1; i < 10; i++){
-		for(uint8_t j = 1; j < (10-i-1); j++){
-			if (steps[j] > steps[j + 1]){
-				tmp = steps[j];
-				steps[j] = steps[j + 1];
-				steps[j + 1] = tmp;
+	uint8_t *steps_offset = &steps[1];
+	for(uint8_t i = 0; i < 9; i++){
+		for(uint8_t j = 0; j < (9-i-1); j++){
+			if (steps_offset[j] > steps_offset[j + 1]){
+				tmp = steps_offset[j];
+				steps_offset[j] = steps_offset[j + 1];
+				steps_offset[j + 1] = tmp;
 			}
 		}
 	}
@@ -288,18 +291,16 @@ int main(void)
 			recalculate_port_output_values = false;
 			
 			// Calculate the fade steps
-			fade_channel = 9;
+			fade_channel = 8;
 			for(i = 0; i < 9; i++){
-				// Next led strip, so we use the next fade speed channel
-				if(i % 3 == 0)
-					fade_channel++;
+				fade_channel++;
 				
 				long scaled_value = (wanted_led_output_values[i] * LED_OUTPUT_SCALE);
-				long step_value =  (scaled_value - led_output_values[i]) /  wanted_led_output_values[fade_channel];
+				long step_value =  (scaled_value - led_output_values[i]) /  (wanted_led_output_values[fade_channel] * 4);
 				
 				led_output_fade_steps_values[i] = step_value;
 				
-				led_output_fade_steps[i] = wanted_led_output_values[fade_channel];
+				led_output_fade_steps[i] = (wanted_led_output_values[fade_channel]*4);
 			}
 			continue;
 		}

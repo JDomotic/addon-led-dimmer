@@ -1,0 +1,3 @@
+(sym_lib_table
+  (lib (name ATiny1614)(type Legacy)(uri /home/janco/Documents/pcb/sensor_board_ac/ATiny1614.lib)(options "")(descr ""))
+)

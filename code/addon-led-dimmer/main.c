@@ -1,8 +1,8 @@
 /*
- * GccApplication1.c
+ * main.c
  *
  * Created: 20-1-2019 15:04:12
- * Author : atmel
+ * Author : Janco Kock
  */				
 #define F_CPU 10000000UL
 #define BAUD_RATE 115200

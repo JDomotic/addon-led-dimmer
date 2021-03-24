@@ -62,7 +62,7 @@ ISR(TCA0_OVF_vect){
 	current_tick++;
 
 	//Set top based on gamma correction 
-	TCA0_SINGLE_PER = gamme8[current_tick];
+	//TCA0_SINGLE_PER = gamme8[current_tick];
 	
 	if(current_tick == 0){
 		port_output_value_index = 0;
@@ -73,7 +73,7 @@ ISR(TCA0_OVF_vect){
 			port_output_values = port_output_values_1;
 		}
 	}
-	
+
 	if(current_tick == port_output_values[port_output_value_index].tick){
 		PORTA_OUT = port_output_values[port_output_value_index].LEDS_PORTA; 
 		PORTB_OUT = port_output_values[port_output_value_index].LEDS_PORTB;
@@ -119,6 +119,76 @@ ISR(USART0_RXC_vect){
 		// Enable package timeout timer.
 		TCB0.CNT = 0;
 		TCB0_CTRLA = 0b00000011;
+	}
+}
+
+uint8_t currentChannel = 0xff;
+uint8_t byteNumber = 0x00;
+
+static char isFirstByte = true; // to bypass the NACK flag for the first byte in a transaction
+ISR(TWI0_TWIS_vect)
+{
+
+	if (TWI0.SSTATUS & TWI_COLL_bm) {
+		//I2C_0_collision_callback();
+		return;
+	}
+
+	if (TWI0.SSTATUS & TWI_BUSERR_bm) {
+		//I2C_0_bus_error_callback();
+		return;
+	}
+
+	if ((TWI0.SSTATUS & TWI_APIF_bm) && (TWI0.SSTATUS & TWI_AP_bm)) {
+		//I2C_0_address_callback();
+		// Write ACK callback here because otherwise the master won't receive an ACK when selecting the address
+		byteNumber = 0;
+		TWI0.SCTRLB = TWI_ACKACT_ACK_gc | TWI_SCMD_RESPONSE_gc; 
+		isFirstByte = true;
+		return;
+	}
+
+	if (TWI0.SSTATUS & TWI_DIF_bm) {
+		if (TWI0.SSTATUS & TWI_DIR_bm) {
+			// Master wishes to read from slave
+			if (!(TWI0.SSTATUS & TWI_RXACK_bm) || isFirstByte) {
+				// Received ACK from master or First byte of transaction
+				isFirstByte = false;
+				//I2C_0_read_callback();
+				TWI0.SCTRLB = TWI_ACKACT_ACK_gc | TWI_SCMD_RESPONSE_gc;
+			} else {
+				// Received NACK from master
+				// Reset module
+				TWI0.SSTATUS |= (TWI_DIF_bm | TWI_APIF_bm);
+				TWI0.SCTRLB = TWI_SCMD_COMPTRANS_gc;
+			}
+		} else // Master wishes to write to slave
+		{
+			uint8_t data = TWI0.SDATA;
+			if(byteNumber == 0){ // Receive register/channel
+				if(data < 18){
+					currentChannel = data;
+				}else{
+					currentChannel = 0xFF;
+					// Channel invalid. write NACK
+					TWI0.SCTRLB = TWI_ACKACT_NACK_gc | TWI_SCMD_RESPONSE_gc; 
+				}
+				byteNumber++;
+			}else if(byteNumber == 1){ // received data
+				if(currentChannel != 0xFF)
+					wanted_led_output_values[currentChannel] = data;
+				byteNumber = 0;
+			}
+		}
+		return;
+	}
+
+	// Check if STOP was received
+	if ((TWI0.SSTATUS & TWI_APIF_bm) && (!(TWI0.SSTATUS & TWI_AP_bm))) {
+		//I2C_0_stop_callback();
+		recalculate_port_output_values = true;
+		TWI0.SCTRLB = TWI_SCMD_COMPTRANS_gc;
+		return;
 	}
 }
 
@@ -228,7 +298,6 @@ void calculate_steps(){
 	current_port_values = !current_port_values;
 }
 
-
 int main(void)
 {
 	///
@@ -252,7 +321,7 @@ int main(void)
 	// PA1 - PA7 output
 	PORTA_DIR = 0b11111110;
 	
-	USART_init();	
+	//USART_init();	
 	
 	///
 	/// Timer A for software PWM
@@ -269,12 +338,30 @@ int main(void)
 	/// Timer B for UART package timeout check
 	///
 	
-	// Set tcb0 top
-	TCB0.CCMP = 0xffff;
-	// Set to timeout check mode
-	TCB0_CTRLB = 0b00000000;
-	// Enable interrupt
-	TCB0.INTCTRL = 0b00000001;
+	// // Set tcb0 top
+	// TCB0.CCMP = 0xffff;
+	// // Set to timeout check mode
+	// TCB0_CTRLB = 0b00000000;
+	// // Enable interrupt
+	// TCB0.INTCTRL = 0b00000001;
+
+	//
+	// Configure I2C
+	//
+
+	// Set I2C alternative pins
+	PORTMUX_CTRLB |= PORTMUX_TWI0_bm;
+
+	TWI0.SADDR = 0x20 << TWI_ADDRMASK_gp /* Slave Address: 0x20 */
+	             | 0 << TWI_ADDREN_bp;   /* General Call Recognition Enable: disabled */
+
+	TWI0.SCTRLA = 1 << TWI_APIEN_bp    /* Address/Stop Interrupt Enable: enabled */
+	              | 1 << TWI_DIEN_bp   /* Data Interrupt Enable: enabled */
+	              | 1 << TWI_ENABLE_bp /* Enable TWI Slave: enabled */
+	              | 1 << TWI_PIEN_bp   /* Stop Interrupt Enable: enabled */
+	              | 0 << TWI_PMEN_bp   /* Promiscuous Mode Enable: disabled */
+	              | 1 << TWI_SMEN_bp;  /* Smart Mode Enable: disabled */
+	TWI0.SCTRLA |= TWI_ENABLE_bm;	   // Enable
 	
 	// Enable all interrupt
 	sei();
@@ -285,6 +372,7 @@ int main(void)
 	long led_output_fade_steps_values[9] = {0};
 	int led_output_fade_steps[9] = {0};
 	bool need_to_recalculate = false;
+
 	
 	while(1){
 		if(recalculate_port_output_values){

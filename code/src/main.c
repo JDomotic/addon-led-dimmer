@@ -270,10 +270,11 @@ void calculate_steps(){
 	}
 	
 	tmp_output[0].tick = 0;
-	tmp_output[0].LEDS_PORTB =	((output_values[1] > 0) << 1) | (output_values[2] > 0);
-	tmp_output[0].LEDS_PORTA =	((output_values[0] > 0) << 7) |
-								((output_values[5] > 0) << 6) | ((output_values[4] > 0) << 5) | ((output_values[3] > 0) << 4) |
-								((output_values[8] > 0) << 3) | ((output_values[7] > 0) << 2) | ((output_values[6] > 0) << 1);
+	tmp_output[0].LEDS_PORTB =  ((output_values[6] > 0) << 2) | ((output_values[7] > 0) << 3) | 								// Strip 3, connector 3, RG
+																((output_values[1] > 0) << 1) | ((output_values[2] > 0) << 0);	// Strip 1, connector 2, GB		
+	tmp_output[0].LEDS_PORTA =	((output_values[0] > 0) << 7) |																	// Strip 1, connector 2, R
+								((output_values[5] > 0) << 6) | ((output_values[4] > 0) << 5) | ((output_values[3] > 0) << 4) | // Strip 2, connector 1, BGR
+								((output_values[8] > 0) << 3); 																	// Strip 3, connector 3, B
 	
 	uint8_t index = 0;
 
@@ -282,7 +283,7 @@ void calculate_steps(){
 		if(steps[i] != steps[i - 1]){
 			index++;
 			tmp_output[index].tick = steps[i];
-			tmp_output[index].LEDS_PORTB =	((output_values[1] > steps[i]) << 1) | (output_values[2] > steps[i]);
+			tmp_output[index].LEDS_PORTB =	((output_values[1] > steps[i]) << 3) | ((output_values[2] > steps[i]) << 2);
 			tmp_output[index].LEDS_PORTA =	((output_values[0] > steps[i]) << 7) |
 											((output_values[5] > steps[i]) << 6) | ((output_values[4] > steps[i]) << 5) | ((output_values[3] > steps[i]) << 4) |
 											((output_values[8] > steps[i]) << 3) | ((output_values[7] > steps[i]) << 2) | ((output_values[6] > steps[i]) << 1);
@@ -317,7 +318,7 @@ int main(void)
 	PORTB_OUT = 0b00000100;
 	
 	// PB0 and PB1 output, RX and TX as output
-	PORTB_DIR = 0b00000111;
+	PORTB_DIR = 0b00001111;
 	// PA1 - PA7 output
 	PORTA_DIR = 0b11111110;
 	
@@ -328,7 +329,7 @@ int main(void)
 	///
 	
 	// Timer A top 128
-	TCA0_SINGLE_PER = 128; 
+	TCA0_SINGLE_PER = 100; 
 	// Enable timer A and set division to 2
 	TCA0_SINGLE_CTRLA = 0b00000001;
 	// Enable overflow interrupt
@@ -348,6 +349,7 @@ int main(void)
 	//
 	// Configure I2C
 	//
+	CPUINT_LVL1VEC = TCA0_OVF_vect;
 
 	// Set I2C alternative pins
 	PORTMUX_CTRLB |= PORTMUX_TWI0_bm;
